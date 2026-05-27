@@ -1,0 +1,278 @@
+/* make-interactive overlay — scoped inside shadow DOM, so we own the namespace.
+ * Designer-tasteful palette: ink, paper, a single accent (orange).
+ */
+:host { all: initial; }
+
+* { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, "Inter", "Helvetica Neue", sans-serif; }
+
+.mi-shell {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 2147483647;
+}
+
+/* Re-enable pointer events on actual interactive bits */
+.mi-toolbar, .mi-modal, .mi-selection-cta, .mi-pin, .mi-toast { pointer-events: auto; }
+
+/* ---------- Toolbar ---------- */
+.mi-toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: rgba(20, 20, 22, 0.92);
+  color: #fff;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.10);
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+  user-select: none;
+}
+
+.mi-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; color: inherit;
+  border: 0; padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.mi-btn:hover { background: rgba(255,255,255,0.08); }
+.mi-btn:active { transform: scale(0.97); }
+
+.mi-toggle .mi-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6b7280;
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+.mi-toolbar[data-mode="pin"]    .mi-dot { background: #FF6B35; box-shadow: 0 0 0 4px rgba(255,107,53,0.20); }
+.mi-toolbar[data-mode="select"] .mi-dot { background: #5B8DEF; box-shadow: 0 0 0 4px rgba(91,141,239,0.20); }
+
+.mi-mode-switch {
+  display: inline-flex; gap: 2px;
+  background: rgba(255,255,255,0.06);
+  padding: 2px; border-radius: 999px;
+}
+.mi-mode {
+  background: transparent; color: inherit;
+  border: 0; padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 14px; cursor: pointer;
+  opacity: 0.7;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.mi-mode:hover { opacity: 1; }
+.mi-mode.mi-active {
+  background: rgba(255,255,255,0.14);
+  opacity: 1;
+}
+
+.mi-send {
+  background: #FF6B35;
+  color: #fff;
+  font-weight: 600;
+  padding: 6px 14px;
+}
+.mi-send:hover { background: #FF7E4F; }
+.mi-count {
+  display: inline-block;
+  min-width: 18px; padding: 0 6px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Hover outline ---------- */
+.mi-hover-outline {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid #FF6B35;
+  border-radius: 4px;
+  background: rgba(255, 107, 53, 0.06);
+  transition: all 60ms ease-out;
+  z-index: 2147483646;
+}
+
+/* ---------- Pin badges ---------- */
+.mi-pin-layer {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.mi-pin {
+  position: fixed;
+  width: 28px; height: 28px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-45deg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.22);
+  transition: transform 140ms cubic-bezier(.34,1.56,.64,1), box-shadow 140ms ease;
+}
+.mi-pin > * { transform: rotate(45deg); }
+.mi-pin:hover { transform: rotate(-45deg) scale(1.10); box-shadow: 0 6px 14px rgba(0,0,0,0.28); }
+
+.mi-pin-draft   { background: #94a3b8; animation: mi-pulse 1.4s ease-in-out infinite; }
+.mi-pin-pending { background: #FF6B35; }
+.mi-pin-resolved{ background: #10b981; }
+
+@keyframes mi-pulse {
+  0%, 100% { box-shadow: 0 4px 10px rgba(0,0,0,0.22), 0 0 0 0 rgba(148,163,184,0.5); }
+  50%      { box-shadow: 0 4px 10px rgba(0,0,0,0.22), 0 0 0 10px rgba(148,163,184,0); }
+}
+
+/* ---------- Selection CTA ---------- */
+.mi-selection-cta {
+  position: fixed;
+  padding: 6px 12px;
+  background: #5B8DEF;
+  color: #fff;
+  font-size: 12px; font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(91,141,239,0.35);
+  user-select: none;
+  z-index: 2147483646;
+  animation: mi-fade-in 140ms ease-out;
+}
+.mi-selection-cta:hover { background: #6F9CF2; }
+
+@keyframes mi-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Modal ---------- */
+.mi-modal-host {
+  position: absolute; inset: 0;
+}
+.mi-modal {
+  position: fixed;
+  width: 360px;
+  background: #fff;
+  color: #111;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.20), 0 4px 12px rgba(0,0,0,0.10);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: auto;
+  animation: mi-modal-in 160ms cubic-bezier(.34,1.4,.64,1);
+}
+
+@keyframes mi-modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.mi-modal-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px;
+}
+.mi-modal-mode {
+  background: #f1f5f9;
+  color: #334155;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mi-modal-preview {
+  flex: 1;
+  color: #64748b;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mi-modal-close {
+  background: transparent; border: 0;
+  font-size: 20px; line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.mi-modal-close:hover { color: #111; }
+
+.mi-textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+  color: #111;
+}
+.mi-textarea:focus {
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 3px rgba(255,107,53,0.15);
+}
+
+.mi-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.mi-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.mi-chip:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.mi-chip.mi-active {
+  background: #FF6B35;
+  color: #fff;
+  border-color: #FF6B35;
+}
+
+.mi-modal-foot {
+  display: flex; justify-content: flex-end; gap: 6px;
+  margin-top: 2px;
+}
+.mi-modal-foot .mi-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.mi-ghost {
+  background: transparent;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.mi-ghost:hover { background: #f8fafc; }
+.mi-primary {
+  background: #111;
+  color: #fff;
+}
+.mi-primary:hover { background: #1f2937; }
+
+/* ---------- Toast ---------- */
+.mi-toast {
+  position: fixed;
+  bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, 0.92);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  animation: mi-toast-in 200ms ease-out;
+  z-index: 2147483647;
+}
+
+@keyframes mi-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

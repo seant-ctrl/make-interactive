@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime artifacts (queue files end up next to user HTML, never in this repo)
+.make-interactive-queue.json
