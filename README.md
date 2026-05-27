@@ -2,6 +2,8 @@
 
 > Turn any HTML file into a live, comment-driven canvas inside Claude Code.
 
+![make-interactive in action: a pin comment modal with quick-action chips, anchored to a page element](docs/hero.png)
+
 A Claude Code skill that wraps any HTML output (mockup, report, prototype, spec) in a local server with a Figma-style comment overlay. Drop pins on UI elements or highlight text in reports — each comment becomes an instruction Claude applies to the source file, and the page hot-reloads.
 
 Built for designers, PMs, and engineers who iterate on HTML deliverables and want a tight feedback loop without leaving the browser — like Google Docs comments, but for any HTML page.
