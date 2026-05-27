@@ -46,63 +46,168 @@ Both methods install to `~/.claude/commands/make-interactive/`. Restart Claude C
 
 ---
 
-## Usage
+## How to use
 
-In Claude Code:
+### 1. Launch
+
+In Claude Code, point the skill at any HTML file:
 
 ```
 /make-interactive path/to/your-file.html
 ```
 
-Optional `--port 8000` if 7321 is taken.
+The skill also picks up natural phrases like *"rend cette page interactive"*, *"comment on this page"*, or *"iterate on this HTML"*. Optional `--port 8000` if 7321 is taken.
 
-Claude will boot the server, open the URL in your browser, and watch for comments. Drop pins, highlight text, send. Claude applies each comment to the source HTML; the page reloads automatically.
+Claude boots a local server, opens the URL in your browser, and starts watching for comments. You'll see a floating **"Comment"** pill in the top-right corner of the page.
 
-When you're done: `stop`, `done`, or close the browser tab.
+### 2. Enter comment mode
+
+Click the **"Comment"** pill (or press <kbd>C</kbd>). Two sub-modes appear:
+
+| Mode | What it's for | How to use |
+|---|---|---|
+| **📌 Pin element** | UI / layout / visual changes | Hover any element → click → modal opens anchored to that element |
+| **✏️ Highlight text** | Copy / report / spec edits | Select any text in the page → floating "💬 Comment" button → click it |
+
+### 3. Write the comment
+
+The modal shows:
+- A **preview** of what you're commenting on (element snippet or selected text)
+- A **textarea** for your instruction
+- **8 quick-action chips** (optional) that shape how Claude will interpret it
+
+You can either:
+- **"Send now"** — submit immediately, Claude starts working
+- **"Add to batch"** — queue this comment as a draft, keep dropping more pins, then hit the toolbar's **"Send (N)"** button to submit everything at once
+
+Pressing <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> in the textarea = Send now.
+
+### 4. Watch Claude apply
+
+After you send, the pin turns from gray (draft) → orange (pending). Claude reads each comment, edits the source HTML, and the browser hot-reloads automatically via Server-Sent Events. Resolved pins turn green with a ✓ tooltip showing what was applied.
+
+### 5. Iterate
+
+Drop more pins. Combine modes. Switch viewport size. The queue is persistent — even if you close the browser, your comments stay in `.make-interactive-queue.json` next to the HTML, restored next time you launch.
+
+### 6. Stop
+
+Say `stop`, `done`, `ferme`, or close the browser. Claude kills the server and confirms.
 
 ---
 
-## Features
+## Recipes
+
+**Iterating on a Claude-generated mockup**
+1. Ask Claude to generate an HTML mockup of a feature
+2. `/make-interactive mockup.html`
+3. Pin: *"Make the hero CTA orange and add an outline variant next to it"* + chip **Variants**
+4. Pin: *"Move the testimonials section above the pricing"* + chip **Layout only**
+5. Send batch → Claude does both, page reloads with the changes
+
+**Reviewing a PRD or report**
+1. Have Claude generate a report as HTML
+2. `/make-interactive report.html`
+3. Switch to **✏️ Highlight text** mode
+4. Highlight the intro → *"Tighter, one sentence"* + chip **Tighter**
+5. Highlight a claim → *"This seems wrong — Apollo doesn't do that. Fix?"* + chip **Ask, don't edit**
+6. Send → Claude rewrites the intro and adds an `<aside>` reply next to the questionable claim
+
+**Comparing visual variants**
+1. Pin any element → *"Show me 3 variants: minimal, bold, playful"* + chip **Variants**
+2. Claude inserts a side-by-side block right there. Comment on the winner: *"Keep variant 2 and remove the others"*
+
+---
+
+## All features
+
+### Activation
+- Slash command `/make-interactive <path/to/file.html>`
+- Natural-language triggers (FR + EN)
+- Optional `--port <n>` argument (default 7321)
+- <kbd>C</kbd> toggles comment mode at any time; <kbd>Esc</kbd> exits
 
 ### Pin mode (UI iteration)
-- Hover outline follows your cursor
-- Click any element to pin a comment, anchored to the element's top-right corner
-- Multiple pins on the same element cascade horizontally (no stacking)
-- Pin badges color-coded: gray=draft, orange=pending, green=resolved
+- Real-time hover outline follows your cursor (orange, 2px)
+- Click any element → modal anchored to your click position
+- Pin badge in teardrop shape, numbered, sits on the element's top-right corner
+- Multiple pins on the same element **cascade horizontally** (22px offset) — no stacking
+- `mousedown` + `click` intercepted → page's own handlers (buttons, links, onclick) can't fire while you're commenting
 
 ### Select mode (content review)
-- Highlight any text in the page → floating "💬 Comment" button
-- Modal opens with the selection preserved as context
+- Highlight any text → floating **"💬 Comment"** button appears next to the selection
+- Click it → modal opens with the selected text preserved as context
+- Ideal for PRDs, reports, specs, longform content
 
-### 8 designer quick-action chips
-Tell Claude what kind of edit you want without spelling it out:
-- **Rewrite** • **Tighter** • **Clearer** • **Variants**
-- **Copy only** • **Layout only** • **Add motion** • **Ask, don't edit**
+### Comment modal
+- Compact (360px wide), anchored to your click but always kept on-screen
+- **Preview** of the target (element snippet or selected text, truncated)
+- **Textarea** with placeholder
+- **Quick-action chips** (pick one, optional)
+- Two send modes: **Send now** (immediate) or **Add to batch** (queue more)
+- Bounce-in animation, designer-tasteful palette
+
+### Quick-action chips
+Tell Claude *how* to interpret your comment without spelling it out:
+
+| Chip | What it tells Claude |
+|---|---|
+| **Rewrite** | Rewrite the targeted text/element cleaner, keep meaning |
+| **Tighter** | Make copy or layout more compact |
+| **Clearer** | Simplify language or structure |
+| **Variants** | Produce 2–3 visual variants inline |
+| **Copy only** | Only change wording, don't touch layout/styles |
+| **Layout only** | Only change layout/structure, keep wording |
+| **Add motion** | Add a tasteful CSS transition/animation |
+| **Ask, don't edit** | You're asking, not editing — reply in an `<aside>` next to the element |
 
 ### Batch workflow
-- "Add to batch" lets you drop several pins before sending
-- Claude processes them as a coherent set (so "remove this" + "expand that" interact correctly)
-- Send anytime via the toolbar's "Send (N)" button
+- "Add to batch" → draft pin appears (pulsing gray), modal closes, you keep going
+- Toolbar shows live count: **Send (3)**
+- Click a draft pin to delete it (remaining pins re-pack automatically)
+- One POST submits the whole batch — Claude processes them as a coherent set
+
+### Pin states (color-coded)
+
+| State | Color | Meaning |
+|---|---|---|
+| Draft | Gray (pulsing) | Local only, not yet submitted |
+| Pending | Orange | Submitted, Claude is working |
+| Resolved | Green ✓ | Claude applied the change |
+| Dismissed | Hidden | You removed it |
+
+Hover any pin → tooltip with the original comment (or `✓ <applied note>` if resolved).
 
 ### Live reload
-- Server-Sent Events stream pushes a reload to your browser whenever Claude edits the file
-- Pins persist across reloads, restored from the queue file
+- **Server-Sent Events** stream pushes a reload event whenever Claude edits the source file
+- Browser refreshes automatically, pin badges restored from the persistent queue
+- A subtle toast shows *"Updated by Claude — reloading…"* before the reload
 
 ### Persistence
-- Comments stored next to the HTML in `.make-interactive-queue.json`
+- All comments stored in `<html-dir>/.make-interactive-queue.json`
 - Survives server restarts — becomes a free changelog of your iteration
-- Each entry: selector, xpath, preview, comment, quick-action, viewport, status, applied note
+- Each entry stores: `selector`, `xpath`, `previewHTML`, `comment`, `quickAction`, `viewport`, `anchor`, `status`, `appliedNote`, `createdAt`
 
-### Robust by design
-- Shadow DOM isolation — your page's CSS can't bleed into the overlay
-- `composedPath()` event detection — bulletproof across React/Vue/etc.
-- `mousedown` + `click` interception in pin mode — page handlers can't react before Claude does
-- Python stdlib only on the server side — zero dependencies
+### Robustness
+- **Shadow DOM isolation** — your page's CSS can't bleed into the overlay (and vice versa)
+- **`composedPath()` event detection** — bulletproof across React, Vue, Svelte, vanilla
+- **`pointer-events: none`** on the overlay shell except interactive bits → clicks pass through where you expect
+- **Z-index 2147483647** (max safe int) — sits above any modal, toast, or sticky bar your page might have
+- Heartbeat-protected SSE connection (15s ping)
 
-### Keyboard
-- `C` — toggle comment mode
-- `Esc` — close modal / exit mode
-- `Cmd/Ctrl+Enter` — send the current comment immediately
+### Stack
+- **Python stdlib only** server (no pip install needed)
+- **Vanilla JS** overlay (no framework, no bundler)
+- **400ms file-watcher polling** for cross-platform reliability
+- **Threaded HTTP server** supports multiple SSE clients
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| <kbd>C</kbd> | Toggle comment mode |
+| <kbd>Esc</kbd> | Close modal / exit mode |
+| <kbd>Cmd</kbd>+<kbd>Enter</kbd> (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>) | Send the current comment immediately |
 
 ---
 
