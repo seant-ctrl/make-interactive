@@ -12,5 +12,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Runtime artifacts (queue files end up next to user HTML, never in this repo)
+# Runtime artifacts — appear next to any HTML the skill operates on
+# (including docs/index.html when dogfooding the landing page itself)
 .make-interactive-queue.json
+.make-interactive-history/
