@@ -108,7 +108,13 @@ def snapshot_now(label: str = None) -> int:
 
 
 def attribute_resolved_to_latest_version(resolved_ids: list) -> None:
-    """Tag newly-resolved comment IDs onto the most recent version entry."""
+    """Tag newly-resolved comment IDs onto the most recent version entry.
+
+    Idempotent — a comment that is already attributed to ANY version (not just
+    the latest) is skipped. This protects against double-counting after a
+    server restart, where the queue_watcher would otherwise re-attribute every
+    already-resolved comment to the newest version on its first pass.
+    """
     if not resolved_ids:
         return
     with history_lock:
@@ -116,13 +122,22 @@ def attribute_resolved_to_latest_version(resolved_ids: list) -> None:
         versions = data.get("versions", [])
         if not versions:
             return
+        already_anywhere = set()
+        for v in versions:
+            already_anywhere.update(v.get("appliedComments", []))
         latest = versions[-1]
         existing = set(latest.get("appliedComments", []))
+        changed = False
         for cid in resolved_ids:
+            if cid in already_anywhere:
+                continue
             if cid not in existing:
                 latest.setdefault("appliedComments", []).append(cid)
                 existing.add(cid)
-        save_history(data)
+                already_anywhere.add(cid)
+                changed = True
+        if changed:
+            save_history(data)
 
 
 def queue_watcher() -> None:

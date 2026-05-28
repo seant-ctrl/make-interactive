@@ -216,16 +216,21 @@
   });
 
   document.addEventListener('keydown', (e) => {
-    // Don't hijack keys when typing — either in the page or inside our overlay
+    // Esc is universal — it always cancels the current thing, even while typing.
+    // Hierarchy: popover > modal > mode. Closing one at a time gives a predictable undo.
+    if (e.key === 'Escape') {
+      if (popoverEl) { closePinPopover(); return; }
+      if (!modalHost.hidden) { closeModal(); return; }
+      if (state.mode !== 'off') { setMode('off'); return; }
+      return;
+    }
+    // Other shortcuts: only when not typing
     if (isOverlay(e) || focusInsideOverlay()) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (e.key === 'c' || e.key === 'C') {
       e.preventDefault();
       setMode(state.mode === 'off' ? 'pin' : 'off');
-    } else if (e.key === 'Escape') {
-      closeModal();
-      if (state.mode !== 'off') setMode('off');
     }
   });
 
@@ -668,7 +673,10 @@
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      // upgrade drafts -> pending using returned ids in order
+      // Upgrade drafts → pending using returned IDs in order.
+      // We must SWAP the click handler: the draft-pin handler deletes the
+      // badge on click; the server-pin handler opens a popover. Cloning the
+      // node is the simplest way to wipe the old listener.
       state.drafts.forEach((d, i) => {
         const newId = json.ids[i];
         const pin = state.pins.get(d.tempId);
@@ -676,8 +684,16 @@
           state.pins.delete(d.tempId);
           pin.entry.id = newId;
           pin.entry.status = 'pending';
-          pin.badgeEl.className = 'mi-pin mi-pin-pending';
-          pin.badgeEl.textContent = newId.replace('c', '');
+          const fresh = pin.badgeEl.cloneNode(true);
+          fresh.className = 'mi-pin mi-pin-pending';
+          fresh.textContent = newId.replace('c', '');
+          fresh.title = (pin.entry.quickAction ? `[${pin.entry.quickAction}] ` : '') + (pin.entry.comment || '');
+          fresh.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openPinPopover(newId);
+          });
+          pin.badgeEl.replaceWith(fresh);
+          pin.badgeEl = fresh;
           state.pins.set(newId, pin);
         }
       });
