@@ -46,15 +46,29 @@
         <button class="mi-mode" data-submode="pin" title="Click any element to pin a comment">\u{1F4CC} Pin element</button>
         <button class="mi-mode" data-submode="select" title="Highlight text in the page to comment">✏️ Highlight text</button>
       </div>
-      <button class="mi-btn mi-send" hidden>
-        Send <span class="mi-count">0</span>
-      </button>
+      <div class="mi-send-wrap" hidden>
+        <button class="mi-btn mi-send">
+          Send <span class="mi-count">0</span>
+        </button>
+        <div class="mi-batch-preview" hidden>
+          <div class="mi-batch-head">Batch — hover here to review</div>
+          <div class="mi-batch-list"></div>
+        </div>
+      </div>
+      <button class="mi-btn mi-history-btn" title="View change history">\u{1F551} History</button>
     </div>
     <div class="mi-pin-layer"></div>
     <div class="mi-modal-host" hidden></div>
     <div class="mi-selection-cta" hidden>\u{1F4AC} Comment</div>
     <div class="mi-toast" hidden></div>
     <div class="mi-hover-outline" hidden></div>
+    <div class="mi-history-panel" hidden>
+      <div class="mi-history-head">
+        <span class="mi-history-title">History</span>
+        <button class="mi-history-close" aria-label="Close">×</button>
+      </div>
+      <div class="mi-history-list"></div>
+    </div>
   `;
   root.appendChild(shell);
 
@@ -64,8 +78,14 @@
   const toolbar = $('.mi-toolbar');
   const toggleBtn = $('.mi-toggle');
   const modeSwitch = $('.mi-mode-switch');
+  const sendWrap = $('.mi-send-wrap');
   const sendBtn = $('.mi-send');
   const countEl = $('.mi-count');
+  const batchPreview = $('.mi-batch-preview');
+  const batchList = $('.mi-batch-list');
+  const historyBtn = $('.mi-history-btn');
+  const historyPanel = $('.mi-history-panel');
+  const historyList = $('.mi-history-list');
   const pinLayer = $('.mi-pin-layer');
   const modalHost = $('.mi-modal-host');
   const selectionCTA = $('.mi-selection-cta');
@@ -569,12 +589,64 @@
   window.addEventListener('scroll', repositionAll, true);
   window.addEventListener('resize', repositionAll);
 
-  /* ---------- Send batch ---------- */
+  /* ---------- Send batch + hover preview ---------- */
   function updateSendButton() {
     const n = state.drafts.length;
     countEl.textContent = n;
-    sendBtn.hidden = n === 0;
+    sendWrap.hidden = n === 0;
+    if (n === 0) batchPreview.hidden = true;
+    // If the preview was open, refresh it (drafts may have changed)
+    if (!batchPreview.hidden) renderBatchPreview();
   }
+
+  function renderBatchPreview() {
+    batchList.innerHTML = '';
+    state.drafts.forEach((d, idx) => {
+      const row = document.createElement('div');
+      row.className = 'mi-batch-row';
+      const modeBadge = d.mode === 'pin' ? '\u{1F4CC}' : '✏️';
+      const targetHint = d.selectionText
+        ? `“${truncate(d.selectionText, 60)}”`
+        : truncate(stripTags(d.previewHTML || ''), 60) || '(element)';
+      row.innerHTML = `
+        <div class="mi-batch-num">${idx + 1}</div>
+        <div class="mi-batch-meta">
+          <div class="mi-batch-comment">${escapeHtml(truncate(d.comment || '(empty)', 120))}</div>
+          <div class="mi-batch-target"><span class="mi-batch-mode">${modeBadge}</span> ${escapeHtml(targetHint)}${d.quickAction ? ` <span class="mi-batch-chip">${escapeHtml(d.quickAction)}</span>` : ''}</div>
+        </div>
+        <button class="mi-batch-del" aria-label="Remove from batch" title="Remove from batch">×</button>
+      `;
+      row.querySelector('.mi-batch-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = state.drafts.indexOf(d);
+        if (i >= 0) state.drafts.splice(i, 1);
+        const pin = state.pins.get(d.tempId);
+        if (pin) {
+          pin.badgeEl.remove();
+          state.pins.delete(d.tempId);
+          repackTarget(pin.target);
+        }
+        updateSendButton();
+        renderBatchPreview();
+      });
+      batchList.appendChild(row);
+    });
+  }
+
+  // Show on hover of either the Send button or the preview panel.
+  // Hide on leave from the wrapper with a small grace delay so the mouse can
+  // traverse the gap between button and panel.
+  let batchHideTimer = null;
+  sendWrap.addEventListener('mouseenter', () => {
+    if (sendWrap.hidden || !state.drafts.length) return;
+    clearTimeout(batchHideTimer);
+    renderBatchPreview();
+    batchPreview.hidden = false;
+  });
+  sendWrap.addEventListener('mouseleave', () => {
+    clearTimeout(batchHideTimer);
+    batchHideTimer = setTimeout(() => { batchPreview.hidden = true; }, 120);
+  });
 
   async function sendBatch() {
     if (!state.drafts.length) return;
@@ -618,6 +690,91 @@
   }
 
   sendBtn.addEventListener('click', sendBatch);
+
+  /* ---------- History panel ---------- */
+  function timeAgo(iso) {
+    try {
+      const d = new Date(iso);
+      const diff = Math.max(0, (Date.now() - d.getTime()) / 1000);
+      if (diff < 60) return `${Math.round(diff)}s ago`;
+      if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+      return d.toLocaleString();
+    } catch { return iso; }
+  }
+
+  async function openHistoryPanel() {
+    historyPanel.hidden = false;
+    historyList.innerHTML = '<div class="mi-history-loading">Loading…</div>';
+    try {
+      const data = await fetch('/api/history').then(r => r.json());
+      renderHistory(data.versions || []);
+    } catch (err) {
+      historyList.innerHTML = '<div class="mi-history-empty">Failed to load history.</div>';
+    }
+  }
+
+  function closeHistoryPanel() { historyPanel.hidden = true; }
+
+  function renderHistory(versions) {
+    if (!versions.length) {
+      historyList.innerHTML = '<div class="mi-history-empty">No history yet.</div>';
+      return;
+    }
+    // Newest first, current at the top
+    const ordered = [...versions].reverse();
+    historyList.innerHTML = '';
+    ordered.forEach((v, i) => {
+      const isCurrent = i === 0;
+      const row = document.createElement('div');
+      row.className = 'mi-history-row' + (isCurrent ? ' mi-history-current' : '');
+      const labelText = v.label || (v.comments && v.comments.length
+        ? truncate(v.comments[0].appliedNote || v.comments[0].comment, 80)
+        : 'Snapshot');
+      const extra = v.comments && v.comments.length > 1
+        ? `<div class="mi-history-extras">+ ${v.comments.length - 1} more change${v.comments.length - 1 === 1 ? '' : 's'}</div>`
+        : '';
+      row.innerHTML = `
+        <div class="mi-history-meta">
+          <div class="mi-history-version">v${String(v.version).padStart(4, '0')}${isCurrent ? ' · Current' : ''}</div>
+          <div class="mi-history-time">${timeAgo(v.timestamp)}</div>
+        </div>
+        <div class="mi-history-label">${escapeHtml(labelText)}</div>
+        ${extra}
+        <div class="mi-history-foot">
+          ${isCurrent ? '' : `<button class="mi-btn mi-ghost mi-history-revert" data-version="${v.version}">Revert to this</button>`}
+        </div>
+      `;
+      const btn = row.querySelector('.mi-history-revert');
+      if (btn) btn.addEventListener('click', () => revertTo(v.version));
+      historyList.appendChild(row);
+    });
+  }
+
+  async function revertTo(version) {
+    if (!confirm(`Revert the HTML to version v${String(version).padStart(4, '0')}? The current state will be saved as a new snapshot first.`)) return;
+    try {
+      const res = await fetch('/api/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version }),
+      });
+      if (!res.ok) {
+        showToast('Revert failed.');
+        return;
+      }
+      showToast(`Reverted to v${String(version).padStart(4, '0')}. Reloading…`, 1200);
+      // SSE reload will fire from the file change. Close panel.
+      closeHistoryPanel();
+    } catch (err) {
+      showToast('Revert failed (network).');
+    }
+  }
+
+  historyBtn.addEventListener('click', () => {
+    if (historyPanel.hidden) openHistoryPanel(); else closeHistoryPanel();
+  });
+  historyPanel.querySelector('.mi-history-close').addEventListener('click', closeHistoryPanel);
 
   /* ---------- Load existing queue on boot ---------- */
   async function loadQueue() {

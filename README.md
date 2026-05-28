@@ -166,7 +166,10 @@ Tell Claude *how* to interpret your comment without spelling it out:
 ### Batch workflow
 - "Add to batch" → draft pin appears (pulsing gray), modal closes, you keep going
 - Toolbar shows live count: **Send (3)**
-- Click a draft pin to delete it (remaining pins re-pack automatically)
+- **Hover the Send button** → batch preview panel shows every draft inline:
+  - Each row shows the comment, target preview, mode icon (📌 or ✏️), and quick-action chip
+  - **× button** on each row removes that single draft from the batch (its pin disappears too)
+- Click a draft pin directly to delete it (remaining pins re-pack automatically)
 - One POST submits the whole batch — Claude processes them as a coherent set
 
 ### Pin states (color-coded)
@@ -186,6 +189,16 @@ Hover any pin → tooltip with the original comment (or `✓ <applied note>` if 
 - **Server-Sent Events** stream pushes a reload event whenever Claude edits the source file
 - Browser refreshes automatically, pin badges restored from the persistent queue
 - A subtle toast shows *"Updated by Claude — reloading…"* before the reload
+
+### History + revert
+- Click the **🕑 History** button in the toolbar → a sidepanel slides in from the right
+- Lists every snapshot of the HTML file:
+  - **v0001 · Original** — the pristine state when the server booted
+  - **v0002, v0003, …** — auto-created every time the file changes (Claude edits, manual edits, reverts)
+- The current version is highlighted in orange; older versions have a **"Revert to this"** button
+- Each row shows the timestamp + the applied note from Claude (the change description)
+- Revert restores the file to that snapshot — and creates a *new* snapshot of the pre-revert state, so reverts are themselves reversible (no destructive operations)
+- All snapshots live in `<html-dir>/.make-interactive-history/` with a `history.json` index
 
 ### Persistence
 - All comments stored in `<html-dir>/.make-interactive-queue.json`

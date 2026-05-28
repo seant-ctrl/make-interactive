@@ -33,9 +33,12 @@ SKILL_DIR = Path(__file__).parent
 # to be. Avoids Path.cwd() permission errors under sandboxed launchers.
 HTML_PATH: Path = None
 QUEUE_FILE: Path = None
+HISTORY_DIR: Path = None
+HISTORY_FILE: Path = None
 sse_clients = []
 sse_lock = threading.Lock()
 queue_lock = threading.Lock()
+history_lock = threading.Lock()
 
 
 def now_iso() -> str:
@@ -57,6 +60,94 @@ def load_queue() -> dict:
 
 def save_queue(data: dict) -> None:
     QUEUE_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def load_history() -> dict:
+    if not HISTORY_FILE.exists():
+        return {"versions": []}
+    try:
+        return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"versions": []}
+
+
+def save_history(data: dict) -> None:
+    HISTORY_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def snapshot_now(label: str = None) -> int:
+    """Snapshot the current HTML file to the history dir. Returns the new version number.
+
+    Versions are numbered v0001, v0002, ... and stored as raw HTML alongside a
+    history.json index. The first snapshot taken at server boot is auto-labelled
+    "Original" so the user can revert back to the pristine state.
+    """
+    with history_lock:
+        data = load_history()
+        versions = data.get("versions", [])
+        next_n = (versions[-1]["version"] + 1) if versions else 1
+        snap_path = HISTORY_DIR / f"v{next_n:04d}.html"
+        try:
+            content = HTML_PATH.read_text(encoding="utf-8")
+        except Exception as exc:
+            emit(f"[error] snapshot read: {exc}")
+            return -1
+        snap_path.write_text(content, encoding="utf-8")
+        entry = {
+            "version": next_n,
+            "timestamp": now_iso(),
+            "label": label or ("Original" if next_n == 1 else None),
+            "appliedComments": [],
+            "fileSize": len(content),
+        }
+        versions.append(entry)
+        data["versions"] = versions
+        save_history(data)
+        emit(f"[snapshot] v{next_n:04d}")
+        return next_n
+
+
+def attribute_resolved_to_latest_version(resolved_ids: list) -> None:
+    """Tag newly-resolved comment IDs onto the most recent version entry."""
+    if not resolved_ids:
+        return
+    with history_lock:
+        data = load_history()
+        versions = data.get("versions", [])
+        if not versions:
+            return
+        latest = versions[-1]
+        existing = set(latest.get("appliedComments", []))
+        for cid in resolved_ids:
+            if cid not in existing:
+                latest.setdefault("appliedComments", []).append(cid)
+                existing.add(cid)
+        save_history(data)
+
+
+def queue_watcher() -> None:
+    """Watch the queue file for newly-resolved comments. Attribute them to the
+    most recent snapshot so the History panel can show what changed at each step.
+    """
+    prev_applied = {}
+    while True:
+        try:
+            time.sleep(0.5)
+            data = load_queue()
+            current_applied = {
+                c["id"]: c.get("appliedNote")
+                for c in data.get("comments", [])
+                if c.get("appliedNote")
+            }
+            newly = [cid for cid, note in current_applied.items() if prev_applied.get(cid) != note]
+            if newly:
+                attribute_resolved_to_latest_version(newly)
+            prev_applied = current_applied
+        except FileNotFoundError:
+            time.sleep(1)
+        except Exception as exc:
+            emit(f"[error] queue_watcher: {exc}")
+            time.sleep(1)
 
 
 def append_comments(new_comments: list) -> list:
@@ -133,6 +224,9 @@ def file_watcher() -> None:
             mtime = HTML_PATH.stat().st_mtime
             if mtime != last_mtime:
                 last_mtime = mtime
+                # Snapshot BEFORE broadcasting reload so the History panel
+                # always reflects the current state when the browser re-fetches.
+                snapshot_now()
                 emit(f"[reload] mtime={mtime}")
                 broadcast("reload", str(mtime))
         except FileNotFoundError:
@@ -140,6 +234,17 @@ def file_watcher() -> None:
         except Exception as exc:
             emit(f"[error] watcher: {exc}")
             time.sleep(1)
+
+
+class _QuietThreadingServer(ThreadingHTTPServer):
+    """Silence the noisy traceback on benign client disconnects (SSE clients
+    closing on page reload, browser nav, etc.). Real server errors still raise."""
+    def handle_error(self, request, client_address):
+        import sys, traceback
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        traceback.print_exc()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -181,6 +286,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/queue":
             self._send(200, json.dumps(load_queue()), "application/json")
+            return
+        if path == "/api/history":
+            # Enrich each version with the resolved comment objects (so the
+            # client can render the applied note without a second roundtrip).
+            history = load_history()
+            q_data = load_queue()
+            by_id = {c["id"]: c for c in q_data.get("comments", [])}
+            for v in history.get("versions", []):
+                v["comments"] = [by_id[cid] for cid in v.get("appliedComments", []) if cid in by_id]
+            self._send(200, json.dumps(history), "application/json")
             return
         if path == "/api/events":
             self.send_response(200)
@@ -238,6 +353,33 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/revert":
+            try:
+                payload = json.loads(raw)
+            except Exception as exc:
+                self._send(400, f"Bad JSON: {exc}")
+                return
+            version = payload.get("version")
+            if not isinstance(version, int):
+                self._send(400, "version must be an integer")
+                return
+            snap_path = HISTORY_DIR / f"v{version:04d}.html"
+            if not snap_path.exists():
+                self._send(404, f"version v{version:04d} not found")
+                return
+            try:
+                content = snap_path.read_text(encoding="utf-8")
+                HTML_PATH.write_text(content, encoding="utf-8")
+            except Exception as exc:
+                self._send(500, f"revert failed: {exc}")
+                return
+            emit(f"[revert] version={version}")
+            # The file write will trigger the watcher which will snapshot the
+            # new state (= a snapshot of the old version, intentionally — we
+            # want reverts in history too so you can undo a revert).
+            self._send(200, json.dumps({"ok": True, "version": version}), "application/json")
+            return
+
         if path == "/api/dismiss":
             try:
                 payload = json.loads(raw)
@@ -260,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global HTML_PATH, QUEUE_FILE
+    global HTML_PATH, QUEUE_FILE, HISTORY_DIR, HISTORY_FILE
     parser = argparse.ArgumentParser()
     parser.add_argument("html", help="Path to HTML file to serve")
     parser.add_argument("--port", type=int, default=7321)
@@ -277,16 +419,26 @@ def main():
         sys.exit(1)
 
     QUEUE_FILE = Path(args.queue).resolve() if args.queue else HTML_PATH.parent / ".make-interactive-queue.json"
+    HISTORY_DIR = HTML_PATH.parent / ".make-interactive-history"
+    HISTORY_FILE = HISTORY_DIR / "history.json"
+
+    HISTORY_DIR.mkdir(exist_ok=True)
 
     if not QUEUE_FILE.exists():
         save_queue({"comments": []})
 
-    threading.Thread(target=file_watcher, daemon=True).start()
+    # Initial snapshot — represents the pristine state, used by "Revert to Original".
+    if not HISTORY_FILE.exists() or not load_history().get("versions"):
+        snapshot_now(label="Original")
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    threading.Thread(target=file_watcher, daemon=True).start()
+    threading.Thread(target=queue_watcher, daemon=True).start()
+
+    server = _QuietThreadingServer(("127.0.0.1", args.port), Handler)
     emit(f"[ready] http://localhost:{args.port}")
     emit(f"[file] {HTML_PATH}")
     emit(f"[queue] {QUEUE_FILE}")
+    emit(f"[history] {HISTORY_DIR}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
