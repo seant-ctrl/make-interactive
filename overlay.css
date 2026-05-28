@@ -257,6 +257,81 @@
 }
 .mi-primary:hover { background: #1f2937; }
 
+/* ---------- Pin popover (click on a sent pin) ---------- */
+.mi-popover {
+  position: fixed;
+  width: 320px;
+  background: #fff;
+  color: #111;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18), 0 3px 10px rgba(0,0,0,0.08);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: auto;
+  font-size: 13px;
+  animation: mi-modal-in 160ms cubic-bezier(.34,1.4,.64,1);
+}
+.mi-popover-head {
+  display: flex; align-items: center; gap: 8px;
+}
+.mi-popover-status {
+  font-size: 11px; font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.mi-popover-pending .mi-popover-status { background: rgba(255,107,53,0.12); color: #B8420F; }
+.mi-popover-resolved .mi-popover-status { background: rgba(16,185,129,0.14); color: #0F7A57; }
+.mi-popover-draft .mi-popover-status    { background: rgba(148,163,184,0.18); color: #475569; }
+.mi-popover-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9; color: #475569;
+  text-transform: lowercase;
+}
+.mi-popover-close {
+  margin-left: auto;
+  background: transparent; border: 0;
+  font-size: 18px; line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.mi-popover-close:hover { color: #111; }
+.mi-popover-target {
+  color: #64748b;
+  font-style: italic;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mi-popover-comment {
+  color: #111;
+  line-height: 1.45;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.mi-popover-applied {
+  background: rgba(16,185,129,0.08);
+  color: #0F7A57;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+.mi-popover-foot {
+  display: flex; justify-content: flex-end; gap: 6px;
+  margin-top: 2px;
+}
+.mi-popover-foot .mi-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
 /* ---------- Toast ---------- */
 .mi-toast {
   position: fixed;

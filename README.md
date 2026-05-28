@@ -178,7 +178,9 @@ Tell Claude *how* to interpret your comment without spelling it out:
 | Resolved | Green ✓ | Claude applied the change |
 | Dismissed | Hidden | You removed it |
 
-Hover any pin → tooltip with the original comment (or `✓ <applied note>` if resolved).
+Hover any pin → tooltip with the original comment (or `✓ <applied note>` if resolved). **Click** any sent pin → popover with the full comment, the quick-action used, the applied note (if resolved), plus:
+- **Focus element** — smooth-scrolls to the target with a quick orange flash
+- **Dismiss** — removes the pin and marks the comment dismissed in the queue
 
 ### Live reload
 - **Server-Sent Events** stream pushes a reload event whenever Claude edits the source file

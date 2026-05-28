@@ -295,6 +295,7 @@
 
   /* ---------- Modal ---------- */
   function openModalFor(ctx) {
+    closePinPopover();
     modalHost.hidden = false;
     modalHost.innerHTML = '';
     const wrap = document.createElement('div');
@@ -432,11 +433,112 @@
     badge.textContent = entry.id.replace('c', '');
     const tip = entry.appliedNote ? `✓ ${entry.appliedNote}` : entry.comment;
     badge.title = (entry.quickAction ? `[${entry.quickAction}] ` : '') + tip;
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPinPopover(entry.id);
+    });
     pinLayer.appendChild(badge);
     const stackIndex = countPinsOnTarget(target);
     state.pins.set(entry.id, { entry, badgeEl: badge, target, stackIndex });
     positionPin(entry.id);
   }
+
+  /* ---------- Pin popover (click on a sent pin) ---------- */
+  let popoverEl = null;
+
+  function closePinPopover() {
+    if (popoverEl) { popoverEl.remove(); popoverEl = null; }
+  }
+
+  function openPinPopover(id) {
+    closePinPopover();
+    const pin = state.pins.get(id);
+    if (!pin) return;
+    const { entry, target, badgeEl } = pin;
+
+    const pop = document.createElement('div');
+    pop.className = 'mi-popover mi-popover-' + entry.status;
+
+    const statusLabel = { pending: 'Pending', resolved: 'Resolved', draft: 'Draft' }[entry.status] || entry.status;
+    const statusIcon = entry.status === 'resolved' ? '✓ ' : entry.status === 'pending' ? '⋯ ' : '';
+    const previewText = entry.selectionText
+      ? `“${truncate(entry.selectionText, 120)}”`
+      : truncate(stripTags(entry.previewHTML || ''), 100) || '(element)';
+
+    pop.innerHTML = `
+      <div class="mi-popover-head">
+        <span class="mi-popover-status">${statusIcon}${statusLabel}</span>
+        ${entry.quickAction ? `<span class="mi-popover-chip">${escapeHtml(entry.quickAction)}</span>` : ''}
+        <button class="mi-popover-close" aria-label="Close">×</button>
+      </div>
+      <div class="mi-popover-target" title="${escapeAttr(entry.selector || '')}">${escapeHtml(previewText)}</div>
+      <div class="mi-popover-comment">${escapeHtml(entry.comment || '(no comment text)')}</div>
+      ${entry.appliedNote ? `<div class="mi-popover-applied">✓ ${escapeHtml(entry.appliedNote)}</div>` : ''}
+      <div class="mi-popover-foot">
+        <button class="mi-btn mi-ghost mi-popover-focus">Focus element</button>
+        <button class="mi-btn mi-ghost mi-popover-dismiss">Dismiss</button>
+      </div>
+    `;
+    root.querySelector('.mi-shell').appendChild(pop);
+    popoverEl = pop;
+
+    // Position popover next to the badge, kept on-screen
+    const br = badgeEl.getBoundingClientRect();
+    const pw = 320, ph = 200, margin = 12;
+    let left = br.right + 8;
+    let top  = br.top;
+    if (left + pw > window.innerWidth - margin) left = br.left - pw - 8;
+    if (left < margin) left = margin;
+    if (top + ph > window.innerHeight - margin) top = window.innerHeight - ph - margin;
+    if (top < margin) top = margin;
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+
+    pop.querySelector('.mi-popover-close').addEventListener('click', closePinPopover);
+    pop.querySelector('.mi-popover-focus').addEventListener('click', () => {
+      if (target && target.scrollIntoView) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.animate(
+          [{ outline: '3px solid #FF6B35' }, { outline: '3px solid transparent' }],
+          { duration: 1400, easing: 'ease-out' }
+        );
+      }
+      closePinPopover();
+    });
+    pop.querySelector('.mi-popover-dismiss').addEventListener('click', async () => {
+      try {
+        await fetch('/api/dismiss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: entry.id }),
+        });
+      } catch (_) { /* offline-safe: still remove visually */ }
+      const t = pin.target;
+      badgeEl.remove();
+      state.pins.delete(entry.id);
+      repackTarget(t);
+      closePinPopover();
+      showToast('Pin dismissed.');
+    });
+  }
+
+  // Close popover on outside click or Esc
+  document.addEventListener('click', (e) => {
+    if (!popoverEl) return;
+    if (isOverlay(e)) {
+      // clicks inside our own overlay handled by their own listeners; only close
+      // when the click landed outside both the popover and the pin badges
+      const path = e.composedPath();
+      if (!path.includes(popoverEl) && !path.some(n => n && n.classList && n.classList.contains('mi-pin'))) {
+        closePinPopover();
+      }
+      return;
+    }
+    closePinPopover();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && popoverEl) closePinPopover();
+  });
 
   // Re-assign stack indices for all pins sharing this target (after a deletion).
   function repackTarget(target) {
